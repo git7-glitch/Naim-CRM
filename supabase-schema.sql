@@ -179,16 +179,16 @@ CREATE TABLE cv_drafts (
 -- STORAGE BUCKET
 -- =====================================================
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('documents', 'documents', true);
+VALUES ('documents', 'documents', false);
 
 -- Storage policy: authenticated users can upload
 CREATE POLICY "Authenticated users can upload" ON storage.objects
   FOR INSERT TO authenticated
   WITH CHECK (bucket_id = 'documents');
 
--- Storage policy: anyone can view
-CREATE POLICY "Public read access" ON storage.objects
-  FOR SELECT
+-- Storage policy: authenticated signed access only
+CREATE POLICY "Authenticated read access" ON storage.objects
+  FOR SELECT TO authenticated
   USING (bucket_id = 'documents');
 
 -- Storage policy: users can delete their uploads
@@ -262,6 +262,7 @@ CREATE POLICY "Authenticated users can manage documents" ON documents
 CREATE POLICY "Authenticated users can manage cv_drafts" ON cv_drafts
   FOR ALL TO authenticated USING (true);
 
+-- Apply supabase/migrations/001_security.sql immediately after this bootstrap.
 -- Users profiles: users can view all, update own
 CREATE POLICY "Authenticated users can view profiles" ON users_profiles
   FOR SELECT TO authenticated USING (true);

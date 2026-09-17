@@ -18,7 +18,7 @@ Legend: [ ] pending; [~] in progress; [x] done and tested; [!] blocked (reason);
 - [!] Platform limitation: built-in one-click hosting targets Cloudflare, while requested target is Netlify and separate Python MCP hosting. Preserve requested architecture; external deployment requires access.
 
 ### Phase 1 — verify first, CRM-1 through CRM-12 in order
-- [~] CRM-1 audit current bucket/schema/service and all file_url/getPublicUrl consumers; private documents bucket; ordered 001_security.sql if needed; remove obsolete public URLs; upload stores null URL and preserves rollback; on-demand signed URLs with default 600s TTL; test upload/view and access.
+- [!] CRM-1 code fixed and 3 regression tests passing; private bootstrap + 001_security.sql, null stored URL, rollback preserved, signed preview (600s, refresh), authenticated downloads, no public URL consumers. BLOCKED: apply to actual Supabase and live upload/view/anonymous denial tests (credentials absent).
 - [ ] CRM-2 MCP reads SUPABASE_SERVICE_ROLE_KEY only server-side; loud .env.example warning; never browser bundle.
 - [ ] CRM-3 audit recursive profile RLS; SECURITY DEFINER is_admin with fixed search_path, revoked public/granted authenticated execution; test both admin and staff profile loads.
 - [ ] CRM-4 audit every Reports card source; live service-layer stage/country/placements queries whenever configured; labeled organized demo only dev/demo; loading/empty/error states; exports and printing use live data. Configured empty production remains empty, not demo.
@@ -90,8 +90,10 @@ Legend: [ ] pending; [~] in progress; [x] done and tested; [!] blocked (reason);
 
 ## Running work log
 
-- 2026-09-17 — Inspected workspace root (existing React CRM, not template); created required ledger before implementation. Production access request sent. Commit: pending initial ledger commit.
+- 2026-09-17 — Inspected workspace root (existing React CRM, not template); created required ledger before implementation. Production access request sent. Commit: 9910219.
 
 ## Verification evidence
 
-None yet. Existing code has not been classified as fixed or broken.
+- CRM-1 initially BROKEN: original documentService.js:20/27, DocumentPreview.jsx:29, DocumentsPage.jsx:463, supabase-schema.sql:182/190. All identified consumers removed or signed. `node --experimental-vm-modules --test tests/*.test.mjs`: 3/3 pass; `npm run build`: PASS (existing large bundle warning). PM2 static preview `/documents`: HTTP 200. These mocked tests do not establish live Storage security.
+- Repository identity verified: origin https://github.com/trevor93/Naim-CRM.git, branch main; fetched remote, no missing upstream commits. GitHub credentials setup succeeded. No SUPABASE/NETLIFY environment variable names were present.
+- 2026-09-17 — CRM-1 implementation and migration staged; current schema recursive UPDATE policy and self-escalation discovered; 001_security.sql also prepares CRM-3 protection. Implementation commit: see next `fix: privatize candidate documents` commit (ledger committed with change).

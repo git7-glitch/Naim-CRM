@@ -66,7 +66,6 @@ function normalizeSupabaseDraft(row, index) {
     description: row.description || `CV draft for ${name}`,
     filePath: row.filePath || row.file_path || null,
     fileName: row.fileName || row.file_name || null,
-    fileUrl: row.fileUrl || row.file_url || null,
   }
 }
 
@@ -97,16 +96,6 @@ function triggerBlobDownload(blob, fileName) {
   link.click()
   link.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
-}
-
-async function downloadRemoteFile(url, fileName) {
-  try {
-    const response = await fetch(url)
-    if (!response.ok) throw new Error(`Download failed with status ${response.status}`)
-    triggerBlobDownload(await response.blob(), fileName)
-  } catch {
-    window.open(url, '_blank', 'noopener')
-  }
 }
 
 // Fixtures and CV Builder drafts carry no stored file, so a download of those
@@ -451,18 +440,13 @@ export default function DocumentsPage() {
   async function downloadRecord(record, label) {
     const fileName = record.file_name || record.fileName || `${baseFileName(record.name) || 'document'}.pdf`
     try {
-      if (record.demoFile) {
+      if (!isSupabaseConfigured && record.demoFile) {
         triggerBlobDownload(record.demoFile, fileName)
         return 'file'
       }
       const filePath = record.file_path || record.filePath
       if (isSupabaseConfigured && filePath) {
         await downloadDocument(filePath, fileName)
-        return 'file'
-      }
-      const fileUrl = record.file_url || record.fileUrl
-      if (fileUrl) {
-        await downloadRemoteFile(fileUrl, fileName)
         return 'file'
       }
       triggerTextDownload(record)
