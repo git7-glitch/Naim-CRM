@@ -92,12 +92,14 @@ export const TASK_STATUSES = ['Pending', 'In Progress', 'Completed', 'Overdue']
 
 export const TASK_PRIORITIES = ['Low', 'Medium', 'High', 'Urgent']
 
+// Phase 2: 'Visa' added for the document center checklist.
 export const DOCUMENT_TYPES = [
   'Passport',
   'Qualification Certificates',
   'Good Conduct Certificate',
   'Medical Certificate',
   'Resume/CV',
+  'Visa',
   'Photo',
   'Other',
 ]
@@ -156,6 +158,7 @@ export const AUTOMATION_JOB_STATUSES = ['pending', 'claimed', 'done', 'failed']
 export const PAGE_ACCESS_OPTIONS = [
   'dashboard',
   'candidates',
+  'pipeline',
   'jobs',
   'appointments',
   'tasks',

@@ -50,3 +50,20 @@ export async function getActiveJobs() {
   if (error) throw error
   return data
 }
+
+export async function getDeletedJobs() {
+  const { data, error } = await supabase.from(TABLE).select('*').not('deleted_at', 'is', null).order('deleted_at', { ascending: false })
+  if (error) throw error
+  return data || []
+}
+
+// Admin-only in the DB (migration 004).
+export async function restoreJob(id) {
+  const { error } = await supabase.from(TABLE).update({ deleted_at: null }).eq('id', id)
+  if (error) throw error
+}
+
+export async function permanentDeleteJob(id) {
+  const { error } = await supabase.from(TABLE).delete().eq('id', id)
+  if (error) throw error
+}
