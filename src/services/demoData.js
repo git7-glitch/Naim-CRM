@@ -1,5 +1,14 @@
-// Demo data used when Supabase is not configured (preview mode).
-// Mirrors the exact data shown in the approved template designs.
+// ============================================================================
+// DEV SEED ONLY (CRM-9 demo-data policy)
+// ----------------------------------------------------------------------------
+// This module is the official, organized development seed. It is rendered
+// ONLY when isDemoMode is true (dev build with no Supabase config), always
+// under the permanent "DEMO MODE — NOT PRODUCTION" banner.
+// * Never import these rows into the production database.
+// * Production builds without Supabase hard-fail (ConfigErrorScreen), so this
+//   data can never render for real users.
+// Mirrors the data shown in the approved template designs.
+// ============================================================================
 
 export const demoCandidates = [
   {
@@ -159,7 +168,7 @@ export const demoAppointments = [
     time: '01:00',
     location: 'Naim Investments Office - Room A',
     coordinator: 'Ali',
-    stage: 'Interviewing',
+    stage: 'Interview',
     status: 'Scheduled',
     notes: '',
   },
