@@ -1,4 +1,5 @@
 import { isSupabaseConfigured, supabase } from '../supabase/client'
+import { ilikeAny, sanitizeSearch } from '../utils/sanitizeSearch'
 import {
   demoCandidatesList,
   demoJobs,
@@ -41,7 +42,7 @@ export const SEARCHABLE_PAGES = [
   { title: 'Job Generator', to: '/job-generator', subtitle: 'Generate a new job posting', keywords: ['generate job', 'create job', 'new job', 'job post', 'advert', 'posting'] },
   { title: 'Reports', to: '/reports', subtitle: 'Performance metrics and placement history', keywords: ['analytics', 'statistics', 'stats', 'metrics', 'performance', 'placements', 'charts'] },
   { title: 'Settings', to: '/settings', subtitle: 'Account, notifications, security and users', keywords: ['preferences', 'account', 'profile', 'security', 'password', 'users', 'config', 'configuration'] },
-  { title: 'WhatsApp', to: '/whatsapp', subtitle: 'WhatsApp messaging', keywords: ['messages', 'chat', 'sms', 'whats app', 'messaging'] },
+  { title: 'WhatsApp', to: '/whatsapp', subtitle: 'WhatsApp templates and send-via-agent', keywords: ['messages', 'chat', 'sms', 'whats app', 'messaging', 'agent'] },
   { title: 'Recycle Bin', to: '/recycle-bin', subtitle: 'Restore or permanently delete removed records', keywords: ['trash', 'deleted', 'bin', 'restore', 'removed', 'archive'] },
 ]
 
@@ -140,6 +141,8 @@ function mapCandidate(c, q) {
       [c.passport_number, 3],
       [c.passport, 3],
       [c.position, 2],
+      [c.job_title, 2],
+      [c.work_position, 2],
       [c.country_applying_to, 2],
       [c.country, 2],
       [c.city, 1],
@@ -152,11 +155,12 @@ function mapCandidate(c, q) {
   )
   if (!score) return null
   const where = c.country_applying_to || c.country
+  const role = c.position || c.job_title || c.work_position
   return {
     id: `candidate:${c.id}`,
     type: 'candidate',
     title: c.name,
-    subtitle: [c.position, where].filter(Boolean).join(' • ') || 'Candidate',
+    subtitle: [role, where].filter(Boolean).join(' • ') || 'Candidate',
     meta: c.stage || c.status || '',
     to: `/candidates?q=${encodeURIComponent(c.name || '')}`,
     score,
@@ -184,7 +188,7 @@ function mapJob(j, q) {
     id: `job:${j.id}`,
     type: 'job',
     title: j.title,
-    subtitle: [j.company, j.location || j.country].filter(Boolean).join(' • ') || 'Job',
+    subtitle: [j.company, j.location || j.city || j.country].filter(Boolean).join(' • ') || 'Job',
     meta: j.status || '',
     to: `/jobs?q=${encodeURIComponent(j.title || '')}`,
     score,
@@ -227,6 +231,7 @@ function mapAppointment(a, q) {
       [a.type, 2],
       [a.location, 2],
       [a.coordinator, 2],
+      [a.notes, 1],
       [a.status, 1],
       [a.stage, 1],
       [a.date, 1],
@@ -301,7 +306,7 @@ function collect(list, mapper) {
   return out.sort(byScoreThenTitle)
 }
 
-/** Demo mode — everything is already in memory. */
+/** Demo mode (dev only, see CRM-9/10) — everything is already in memory. */
 function searchDemo(q) {
   return {
     candidate: collect(demoCandidatesList.filter((c) => !c.deleted_at), (c) => mapCandidate(c, q)),
@@ -320,6 +325,7 @@ function searchDemo(q) {
 const REMOTE_FETCH_LIMIT = 25
 
 async function remoteRows(table, orFilter, select = '*', notDeleted = true) {
+  if (!orFilter) return []
   try {
     let query = supabase.from(table).select(select)
     if (notDeleted) query = query.is('deleted_at', null)
@@ -332,15 +338,23 @@ async function remoteRows(table, orFilter, select = '*', notDeleted = true) {
   }
 }
 
-/** Supabase mode — one narrow query per table, all in parallel. */
+const EMPTY_ENTITIES = Object.freeze({ candidate: [], job: [], task: [], appointment: [], document: [], cv: [] })
+
+/**
+ * Supabase mode — one narrow query per table, all in parallel.
+ * CRM-8: every filter goes through ilikeAny(), and only columns that exist in
+ * supabase-schema.sql are referenced (unknown columns made PostgREST reject
+ * the whole query, silently emptying results).
+ */
 async function searchRemote(q) {
-  const like = q.replace(/[%,()]/g, '')
-  const [candidates, jobs, tasks, appointments, documents] = await Promise.all([
-    remoteRows('candidates', `name.ilike.%${like}%,email.ilike.%${like}%,phone.ilike.%${like}%,passport_number.ilike.%${like}%,position.ilike.%${like}%`),
-    remoteRows('jobs', `title.ilike.%${like}%,company.ilike.%${like}%,location.ilike.%${like}%,description.ilike.%${like}%`),
-    remoteRows('tasks', `title.ilike.%${like}%,description.ilike.%${like}%,assignee.ilike.%${like}%`, '*', false),
-    remoteRows('appointments', `title.ilike.%${like}%,location.ilike.%${like}%,coordinator.ilike.%${like}%`, '*, candidates(name, email, phone)', false),
-    remoteRows('documents', `file_name.ilike.%${like}%,document_type.ilike.%${like}%`, '*', false),
+  if (!sanitizeSearch(q)) return EMPTY_ENTITIES
+  const [candidates, jobs, tasks, appointments, documents, cvDrafts] = await Promise.all([
+    remoteRows('candidates', ilikeAny(['name', 'email', 'phone', 'passport_number', 'job_title', 'work_position', 'country_applying_to'], q)),
+    remoteRows('jobs', ilikeAny(['title', 'company', 'city', 'country', 'description'], q)),
+    remoteRows('tasks', ilikeAny(['title', 'description'], q), '*', false),
+    remoteRows('appointments', ilikeAny(['title', 'type', 'notes'], q), '*, candidates(name, email, phone)', false),
+    remoteRows('documents', ilikeAny(['file_name', 'document_type'], q), '*', false),
+    remoteRows('cv_drafts', ilikeAny(['title', 'full_name'], q), 'id, title, full_name, template, updated_at', false),
   ])
 
   return {
@@ -349,7 +363,7 @@ async function searchRemote(q) {
     task: collect(tasks, (t) => mapTask(t, q)),
     appointment: collect(appointments, (a) => mapAppointment(a, q)),
     document: collect(documents, (d) => mapDocument(d, q, 'medical-reports')),
-    cv: collect(demoCVDrafts, (d) => mapCV(d, q)),
+    cv: collect(cvDrafts, (d) => mapCV({ ...d, name: d.full_name || d.title, kind: 'CV Draft' }, q)),
   }
 }
 

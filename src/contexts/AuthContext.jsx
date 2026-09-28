@@ -1,19 +1,23 @@
 import { createContext, useContext, useState, useEffect } from 'react'
-import { supabase, isSupabaseConfigured } from '../supabase/client'
+import { supabase, isSupabaseConfigured, isDemoMode } from '../supabase/client'
 
 const AuthContext = createContext(null)
 
+// CRM-10: only ever used when isDemoMode (dev build, no Supabase). Production
+// builds without Supabase render ConfigErrorScreen before this provider mounts.
 const DEMO_USER = { id: 'demo-admin', email: 'admin@naiminvestments.com' }
 const DEMO_PROFILE = {
   id: 'demo-admin',
-  display_name: 'Admin',
+  display_name: 'Demo Admin',
   role: 'admin',
-  page_permissions: ['dashboard', 'candidates', 'jobs', 'appointments', 'tasks', 'documents', 'reports', 'settings', 'associates', 'cv-builder', 'job-generator', 'receptionist-view', 'recycle-bin'],
+  page_permissions: ['dashboard', 'candidates', 'jobs', 'appointments', 'tasks', 'documents', 'reports', 'settings', 'associates', 'cv-builder', 'job-generator', 'receptionist-view', 'recycle-bin', 'whatsapp'],
 }
 
+export const INVITE_ONLY_MESSAGE = 'Naim CRM accounts are invite-only. Ask an administrator to send you an invitation.'
+
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(isSupabaseConfigured ? null : DEMO_USER)
-  const [userProfile, setUserProfile] = useState(isSupabaseConfigured ? null : DEMO_PROFILE)
+  const [user, setUser] = useState(isDemoMode ? DEMO_USER : null)
+  const [userProfile, setUserProfile] = useState(isDemoMode ? DEMO_PROFILE : null)
   const [loading, setLoading] = useState(isSupabaseConfigured)
 
   useEffect(() => {
@@ -38,17 +42,19 @@ export function AuthProvider({ children }) {
   }, [])
 
   async function fetchProfile(userId) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('users_profiles')
       .select('*')
       .eq('id', userId)
       .single()
-    setUserProfile(data)
+    // A failed profile load must never grant privileges: no profile, no role.
+    setUserProfile(error ? null : data)
     setLoading(false)
   }
 
   async function login(email, password) {
     if (!isSupabaseConfigured) {
+      if (!isDemoMode) throw new Error('This deployment is not connected to its database.')
       setUser(DEMO_USER)
       setUserProfile(DEMO_PROFILE)
       return { user: DEMO_USER }
@@ -58,27 +64,10 @@ export function AuthProvider({ children }) {
     return data
   }
 
-  async function register(email, password, displayName) {
-    if (!isSupabaseConfigured) {
-      setUser(DEMO_USER)
-      setUserProfile(DEMO_PROFILE)
-      return { user: DEMO_USER }
-    }
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: { data: { display_name: displayName } },
-    })
-    if (error) throw error
-    if (data.user) {
-      await supabase.from('users_profiles').insert({
-        id: data.user.id,
-        display_name: displayName,
-        role: 'user',
-        page_permissions: ['dashboard', 'candidates', 'jobs'],
-      })
-    }
-    return data
+  // Public sign-up is disabled (Phase 4: invite-only). Admins invite users from
+  // the Supabase dashboard; handle_new_user() creates their profile row.
+  async function register() {
+    throw new Error(INVITE_ONLY_MESSAGE)
   }
 
   async function logout() {
@@ -116,6 +105,7 @@ export function AuthProvider({ children }) {
         updateProfile,
         isAdmin,
         isManager,
+        isDemoMode,
         refreshProfile: () => isSupabaseConfigured && user && fetchProfile(user.id),
       }}
     >

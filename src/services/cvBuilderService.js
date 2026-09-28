@@ -1,4 +1,5 @@
 import { CANDIDATE_STATUSES } from '../components/candidates/StatusDropdown'
+import { normalizeStage } from '../utils/constants'
 
 export const CV_BUILDER_STORAGE_KEY = 'naim-cv-builder-draft'
 
@@ -16,13 +17,15 @@ export const CV_SELECT_OPTIONS = Object.freeze({
   ],
   englishLevel: ['BASIC', 'GOOD', 'FLUENT', 'EXCELLENT'],
   arabicLevel: ['NONE', 'LITTLE', 'BASIC', 'GOOD', 'FLUENT'],
-  // Stage offers the same five stages the Candidates page badges use.
+  // CRM-6: Stage offers exactly the canonical CANDIDATE_STAGES (via the
+  // Candidates page dropdown), so the two lists cannot drift.
   stage: CANDIDATE_STATUSES.map((status) => status.label),
 })
 
 // Wording earlier versions of these dropdowns saved, plus the spellings
 // candidate records carry, folded onto the choices above — so a saved draft
 // keeps its answer instead of quietly dropping back to the placeholder.
+// Stage spellings are folded centrally by normalizeStage() in constants.js.
 const LEGACY_SELECT_VALUES = {
   religion: {
     islam: 'MUSLIM',
@@ -47,13 +50,6 @@ const LEGACY_SELECT_VALUES = {
   },
   englishLevel: { poor: 'BASIC', little: 'BASIC', beginner: 'BASIC', fair: 'GOOD' },
   arabicLevel: { poor: 'NONE', beginner: 'LITTLE', fair: 'GOOD', excellent: 'FLUENT' },
-  stage: {
-    screening: 'Onboarding',
-    interview: 'Interviewing',
-    placed: 'Hired',
-    completed: 'Hired',
-    withdrawn: 'Rejected',
-  },
 }
 
 /**
@@ -65,6 +61,10 @@ const LEGACY_SELECT_VALUES = {
 export function standardCVSelectValue(field, value) {
   const cleaned = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
   if (!cleaned) return ''
+  if (field === 'stage') {
+    const stage = normalizeStage(cleaned)
+    return CV_SELECT_OPTIONS.stage.includes(stage) ? stage : ''
+  }
   const exact = CV_SELECT_OPTIONS[field].find((option) => option.toLowerCase() === cleaned.toLowerCase())
   return exact || LEGACY_SELECT_VALUES[field]?.[cleaned.toLowerCase()] || ''
 }

@@ -1,3 +1,7 @@
+// DEV DEMO DATA ONLY (CRM-9). Rendered by the Reports page exclusively when
+// Supabase is NOT configured in a dev build, always labelled "Demo data".
+// Production reads live data via src/services/reportsService.js.
+
 export const REPORT_METRICS = Object.freeze([
   { label: 'Total Candidates', value: 165, icon: 'users', accent: 'gold' },
   { label: 'Total Jobs', value: 3, icon: 'briefcase', accent: 'gold' },
@@ -10,8 +14,8 @@ export const REPORT_METRICS = Object.freeze([
 export const CANDIDATE_STAGES = Object.freeze([
   { label: 'Onboarding', value: 158 },
   { label: 'Offer', value: 4 },
-  { label: 'Interviewing', value: 1 },
-  { label: 'Hired', value: 2 },
+  { label: 'Interview', value: 1 },
+  { label: 'Placed', value: 2 },
 ])
 
 export const RECENT_SUCCESSFUL_PLACEMENTS = Object.freeze([
@@ -76,19 +80,35 @@ const historyEntries = [
 export const PLACEMENT_HISTORY = Object.freeze(
   historyEntries.map(([candidate, position, country, salary], index) => Object.freeze({
     id: `placement-${index + 1}`,
-    date: 'Invalid Date',
+    date: 'Not set',
     sequence: index + 1,
     candidate,
     position,
     country,
     salary,
+    currency: 'KES',
     status: 'Onboarding',
     departure: 'Not set',
   }))
 )
 
-export function formatSalary(value) {
-  return `Ksh ${Number(value).toLocaleString('en-KE', {
+/** Same shape as reportsService.getReportsSummary(), flagged demo. */
+export function getDemoReportsSummary() {
+  return {
+    demo: true,
+    isEmpty: false,
+    metrics: REPORT_METRICS,
+    stages: CANDIDATE_STAGES,
+    countries: APPLICATIONS_BY_COUNTRY,
+    taskPerformance: TASK_PERFORMANCE,
+    placements: PLACEMENT_HISTORY,
+    recentPlacements: RECENT_SUCCESSFUL_PLACEMENTS,
+  }
+}
+
+export function formatSalary(value, currency = 'KES') {
+  const label = !currency || currency === 'KES' ? 'Ksh' : currency
+  return `${label} ${Number(value || 0).toLocaleString('en-KE', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`
@@ -105,10 +125,10 @@ export function filterReportRows(rows, query) {
       row.candidate,
       row.position,
       row.country,
-      formatSalary(row.salary),
+      typeof row.salary === 'number' ? formatSalary(row.salary, row.currency) : row.salary,
       row.status,
       row.departure,
-    ].some((value) => String(value).toLocaleLowerCase().includes(term))
+    ].some((value) => value !== undefined && value !== null && String(value).toLocaleLowerCase().includes(term))
   )
 }
 
@@ -134,7 +154,7 @@ export function toExportRows(rows) {
     Candidate: row.candidate,
     Position: row.position,
     Country: row.country,
-    Salary: formatSalary(row.salary),
+    Salary: formatSalary(row.salary, row.currency),
     Status: row.status,
     Departure: row.departure,
   }))

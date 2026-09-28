@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Download, Printer, Search } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Download, Printer, Search, RefreshCw, TriangleAlert, BarChart3 } from 'lucide-react'
 import Layout from '../components/layout/Layout'
 import Button from '../components/ui/Button'
 import CandidatesByStageCard from '../components/reports/CandidatesByStageCard'
@@ -8,17 +8,13 @@ import PlacementHistoryTable from '../components/reports/PlacementHistoryTable'
 import RecentSuccessfulPlacements from '../components/reports/RecentSuccessfulPlacements'
 import ReportMetricCard from '../components/reports/ReportMetricCard'
 import {
-  APPLICATIONS_BY_COUNTRY,
-  CANDIDATE_STAGES,
   filterReportRows,
-  PLACEMENT_HISTORY,
-  RECENT_SUCCESSFUL_PLACEMENTS,
-  REPORT_METRICS,
+  getDemoReportsSummary,
   sortReportRows,
-  STAGE_DISTRIBUTION,
-  TASK_PERFORMANCE,
   toExportRows,
 } from '../components/reports/reportsData'
+import { getReportsSummary } from '../services/reportsService'
+import { isSupabaseConfigured } from '../supabase/client'
 import { exportToCSV, exportToExcel, exportToPDF } from '../utils/exportUtils'
 import { useToast } from '../contexts/ToastContext'
 
@@ -28,20 +24,57 @@ const exportOptions = [
   { value: 'pdf', label: 'PDF Format' },
 ]
 
+function ReportsSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading reports" className="space-y-6">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="h-24 animate-pulse rounded-xl bg-cream" />
+        ))}
+      </div>
+      <div className="h-40 animate-pulse rounded-xl bg-cream" />
+      <div className="grid gap-6 xl:grid-cols-2">
+        <div className="h-64 animate-pulse rounded-xl bg-cream" />
+        <div className="h-64 animate-pulse rounded-xl bg-cream" />
+      </div>
+    </div>
+  )
+}
+
 export default function ReportsPage() {
   const toast = useToast()
   const [search, setSearch] = useState('')
   const [format, setFormat] = useState('csv')
   const [sort, setSort] = useState({ key: null, direction: null })
+  const [state, setState] = useState({ status: 'loading', data: null, error: null })
+
+  const load = useCallback(async () => {
+    setState((current) => ({ ...current, status: 'loading', error: null }))
+    // Demo data only exists in dev builds without Supabase (CRM-9/10);
+    // production without Supabase never reaches this page.
+    if (!isSupabaseConfigured) {
+      setState({ status: 'ready', data: getDemoReportsSummary(), error: null })
+      return
+    }
+    try {
+      setState({ status: 'ready', data: await getReportsSummary(), error: null })
+    } catch (error) {
+      setState({ status: 'error', data: null, error: error?.message || 'Failed to load reports' })
+    }
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const data = state.data
 
   const filteredPlacements = useMemo(
-    () => filterReportRows(RECENT_SUCCESSFUL_PLACEMENTS, search),
-    [search]
+    () => filterReportRows(data?.recentPlacements || [], search),
+    [data, search]
   )
 
   const visibleHistory = useMemo(
-    () => sortReportRows(filterReportRows(PLACEMENT_HISTORY, search), sort),
-    [search, sort]
+    () => sortReportRows(filterReportRows(data?.placements || [], search), sort),
+    [data, search, sort]
   )
 
   function handleSort(key) {
@@ -71,9 +104,28 @@ export default function ReportsPage() {
   return (
     <Layout title="Admin Dashboard">
       <section id="reports-print-area" className="min-w-0 space-y-6 animate-fade-in">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary sm:text-3xl">Reports & Analytics</h1>
-          <p className="mt-1 text-sm text-text-secondary">Track performance and analyze recruitment metrics</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="flex items-center gap-3 text-2xl font-bold text-text-primary sm:text-3xl">
+              Reports & Analytics
+              {data?.demo && (
+                <span className="rounded-full border border-red-300 bg-red-50 px-3 py-1 text-xs font-bold uppercase tracking-wide text-red-700">
+                  Demo data
+                </span>
+              )}
+            </h1>
+            <p className="mt-1 text-sm text-text-secondary">
+              {data?.demo
+                ? 'Sample figures for development. Connect Supabase to see live data.'
+                : 'Live recruitment metrics from the CRM database'}
+            </p>
+          </div>
+          {!data?.demo && (
+            <Button type="button" variant="outline" onClick={load} disabled={state.status === 'loading'} className="reports-no-print min-h-10 bg-white">
+              <RefreshCw className={`h-4 w-4 ${state.status === 'loading' ? 'animate-spin' : ''}`} aria-hidden="true" />
+              Refresh
+            </Button>
+          )}
         </div>
 
         <div className="reports-no-print flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -104,33 +156,60 @@ export default function ReportsPage() {
                 ))}
               </select>
             </label>
-            <Button type="button" onClick={handleExport} className="min-h-10">
+            <Button type="button" onClick={handleExport} className="min-h-10" disabled={state.status !== 'ready'}>
               <Download className="h-4 w-4" aria-hidden="true" />
               Export Report
             </Button>
-            <Button type="button" variant="outline" onClick={() => window.print()} className="min-h-10 bg-white">
+            <Button type="button" variant="outline" onClick={() => window.print()} className="min-h-10 bg-white" disabled={state.status !== 'ready'}>
               <Printer className="h-4 w-4" aria-hidden="true" />
               Print Report
             </Button>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
-          {REPORT_METRICS.map((metric) => <ReportMetricCard key={metric.label} metric={metric} />)}
-        </div>
+        {state.status === 'loading' && <ReportsSkeleton />}
 
-        <CandidatesByStageCard stages={CANDIDATE_STAGES} />
+        {state.status === 'error' && (
+          <div role="alert" className="flex flex-col items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-8 text-center text-red-700">
+            <TriangleAlert className="h-8 w-8" aria-hidden="true" />
+            <p className="font-semibold">Couldn't load live reports</p>
+            <p className="text-sm">{state.error}</p>
+            <Button type="button" onClick={load}>Try again</Button>
+          </div>
+        )}
 
-        <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.7fr)]">
-          <RecentSuccessfulPlacements placements={filteredPlacements} />
-          <LivePerformanceDashboard
-            stages={STAGE_DISTRIBUTION}
-            countries={APPLICATIONS_BY_COUNTRY}
-            tasks={TASK_PERFORMANCE}
-          />
-        </div>
+        {state.status === 'ready' && data && (
+          <>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+              {data.metrics.map((metric) => <ReportMetricCard key={metric.label} metric={metric} />)}
+            </div>
 
-        <PlacementHistoryTable rows={visibleHistory} sort={sort} onSort={handleSort} />
+            {data.isEmpty ? (
+              <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-cream bg-white p-10 text-center">
+                <BarChart3 className="h-10 w-10 text-text-muted" aria-hidden="true" />
+                <p className="font-semibold text-text-primary">No candidates yet</p>
+                <p className="max-w-md text-sm text-text-secondary">
+                  Stage breakdowns, country splits and placement history appear here as soon as candidates are added.
+                </p>
+              </div>
+            ) : (
+              <>
+                <CandidatesByStageCard stages={data.stages} />
+
+                <div className="grid items-stretch gap-6 xl:grid-cols-[minmax(300px,0.8fr)_minmax(0,1.7fr)]">
+                  <RecentSuccessfulPlacements placements={filteredPlacements} />
+                  <LivePerformanceDashboard
+                    stages={data.stages}
+                    countries={data.countries}
+                    tasks={data.taskPerformance}
+                  />
+                </div>
+
+                <PlacementHistoryTable rows={visibleHistory} sort={sort} onSort={handleSort} />
+              </>
+            )}
+          </>
+        )}
       </section>
     </Layout>
   )

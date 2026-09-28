@@ -6,14 +6,13 @@ import Button from '../components/ui/Button'
 import Input from '../components/ui/Input'
 import { Eye, EyeOff } from 'lucide-react'
 
+// Public registration was removed: Naim CRM is invite-only (Phase 4).
 export default function LoginPage() {
-  const [isRegister, setIsRegister] = useState(false)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [name, setName] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
-  const { login, register } = useAuth()
+  const { login, isDemoMode } = useAuth()
   const toast = useToast()
   const navigate = useNavigate()
 
@@ -21,14 +20,9 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     try {
-      if (isRegister) {
-        await register(email, password, name)
-        toast.success('Account created! Check your email for verification.')
-      } else {
-        await login(email, password)
-        toast.success('Welcome back!')
-        navigate('/dashboard')
-      }
+      await login(email, password)
+      toast.success('Welcome back!')
+      navigate('/dashboard')
     } catch (err) {
       toast.error(err.message || 'Authentication failed')
     } finally {
@@ -52,23 +46,13 @@ export default function LoginPage() {
         </div>
 
         <div className="rounded-2xl border border-cream bg-white p-8 shadow-xl">
-          <h2 className="mb-6 text-center text-lg font-semibold text-text-primary">
-            {isRegister ? 'Create Account' : 'Sign In'}
-          </h2>
+          <h2 className="mb-6 text-center text-lg font-semibold text-text-primary">Sign In</h2>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            {isRegister && (
-              <Input
-                label="Full Name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="John Smith"
-                required
-              />
-            )}
             <Input
               label="Email"
               type="email"
+              autoComplete="username"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
@@ -78,6 +62,7 @@ export default function LoginPage() {
               <Input
                 label="Password"
                 type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
@@ -86,6 +71,7 @@ export default function LoginPage() {
               />
               <button
                 type="button"
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
                 onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-8 text-text-muted hover:text-text-secondary"
               >
@@ -93,19 +79,18 @@ export default function LoginPage() {
               </button>
             </div>
             <Button type="submit" loading={loading} className="w-full">
-              {isRegister ? 'Create Account' : 'Sign In'}
+              Sign In
             </Button>
           </form>
 
           <p className="mt-4 text-center text-sm text-text-secondary">
-            {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
-            <button
-              onClick={() => setIsRegister(!isRegister)}
-              className="font-medium text-primary hover:text-primary-hover"
-            >
-              {isRegister ? 'Sign In' : 'Register'}
-            </button>
+            Access is by invitation only. Ask your administrator for an invite.
           </p>
+          {isDemoMode && (
+            <p className="mt-2 text-center text-xs font-semibold text-red-600">
+              Demo mode: any email and password signs you in with sample data.
+            </p>
+          )}
         </div>
       </div>
     </div>
