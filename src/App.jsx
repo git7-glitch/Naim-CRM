@@ -1,37 +1,77 @@
-import { useLayoutEffect } from 'react'
+import { lazy, Suspense, useLayoutEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigationType } from 'react-router-dom'
 import { AuthProvider, useAuth } from './contexts/AuthContext'
 import { ToastProvider } from './contexts/ToastContext'
+import { NotificationsProvider } from './contexts/NotificationsContext'
 import { isDemoMode, isMisconfiguredProduction } from './supabase/client'
 import ConfigErrorScreen from './components/system/ConfigErrorScreen'
 import DemoModeBanner from './components/system/DemoModeBanner'
-import LoginPage from './pages/LoginPage'
-import DashboardPage from './pages/DashboardPage'
-import CandidatesPage from './pages/CandidatesPage'
-import JobsPage from './pages/JobsPage'
-import AppointmentsPage from './pages/AppointmentsPage'
-import TasksPage from './pages/TasksPage'
-import DocumentsPage from './pages/DocumentsPage'
-import ReportsPage from './pages/ReportsPage'
-import SettingsPage from './pages/SettingsPage'
-import AssociatesPage from './pages/AssociatesPage'
-import CVBuilderPage from './pages/CVBuilderPage'
-import JobGeneratorPage from './pages/JobGeneratorPage'
-import ReceptionistViewPage from './pages/ReceptionistViewPage'
-import WhatsAppPage from './pages/WhatsAppPage'
-import RecycleBinPage from './pages/RecycleBinPage'
-import { PageSpinner } from './components/ui/Spinner'
+import ErrorBoundary from './components/system/ErrorBoundary'
+import { RouteSkeleton } from './components/ui/Skeleton'
+import { canAccessPage } from './utils/permissions'
 
-function ProtectedRoute({ children }) {
-  const { user, loading } = useAuth()
-  if (loading) return <div className="flex min-h-screen items-center justify-center"><PageSpinner /></div>
+// Phase 2: route-level code splitting. Each page is its own chunk.
+const LoginPage = lazy(() => import('./pages/LoginPage'))
+const DashboardPage = lazy(() => import('./pages/DashboardPage'))
+const CandidatesPage = lazy(() => import('./pages/CandidatesPage'))
+const CandidateProfilePage = lazy(() => import('./pages/CandidateProfilePage'))
+const PipelinePage = lazy(() => import('./pages/PipelinePage'))
+const JobsPage = lazy(() => import('./pages/JobsPage'))
+const AppointmentsPage = lazy(() => import('./pages/AppointmentsPage'))
+const TasksPage = lazy(() => import('./pages/TasksPage'))
+const DocumentsPage = lazy(() => import('./pages/DocumentsPage'))
+const ReportsPage = lazy(() => import('./pages/ReportsPage'))
+const SettingsPage = lazy(() => import('./pages/SettingsPage'))
+const AssociatesPage = lazy(() => import('./pages/AssociatesPage'))
+const CVBuilderPage = lazy(() => import('./pages/CVBuilderPage'))
+const JobGeneratorPage = lazy(() => import('./pages/JobGeneratorPage'))
+const ReceptionistViewPage = lazy(() => import('./pages/ReceptionistViewPage'))
+const WhatsAppPage = lazy(() => import('./pages/WhatsAppPage'))
+const RecycleBinPage = lazy(() => import('./pages/RecycleBinPage'))
+
+// path -> [page component, permission key]
+export const PROTECTED_ROUTES = [
+  ['/dashboard', DashboardPage, 'dashboard'],
+  ['/candidates', CandidatesPage, 'candidates'],
+  ['/candidates/:id', CandidateProfilePage, 'candidates'],
+  ['/pipeline', PipelinePage, 'pipeline'],
+  ['/jobs', JobsPage, 'jobs'],
+  ['/appointments', AppointmentsPage, 'appointments'],
+  ['/tasks', TasksPage, 'tasks'],
+  ['/documents', DocumentsPage, 'documents'],
+  ['/reports', ReportsPage, 'reports'],
+  ['/settings', SettingsPage, 'settings'],
+  ['/associates', AssociatesPage, 'associates'],
+  ['/cv-builder', CVBuilderPage, 'cv-builder'],
+  ['/job-generator', JobGeneratorPage, 'job-generator'],
+  ['/receptionist-view', ReceptionistViewPage, 'receptionist-view'],
+  ['/whatsapp', WhatsAppPage, 'whatsapp'],
+  ['/recycle-bin', RecycleBinPage, 'recycle-bin'],
+]
+
+function NoAccess() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-cream-light p-6">
+      <div className="max-w-md rounded-2xl bg-white p-8 text-center shadow-lg">
+        <h1 className="text-lg font-bold text-primary">You don't have access to this page</h1>
+        <p className="mt-2 text-sm text-text-secondary">Ask an administrator to grant it from Settings.</p>
+        <a href="/dashboard" className="mt-6 inline-block rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover">Back to dashboard</a>
+      </div>
+    </div>
+  )
+}
+
+function ProtectedRoute({ page, children }) {
+  const { user, userProfile, loading } = useAuth()
+  if (loading) return <RouteSkeleton />
   if (!user) return <Navigate to="/login" replace />
+  if (!canAccessPage(userProfile, page)) return <NoAccess />
   return children
 }
 
 function PublicRoute({ children }) {
   const { user, loading } = useAuth()
-  if (loading) return <div className="flex min-h-screen items-center justify-center"><PageSpinner /></div>
+  if (loading) return <RouteSkeleton />
   if (user) return <Navigate to="/dashboard" replace />
   return children
 }
@@ -48,28 +88,22 @@ function ScrollManager() {
 }
 
 function AppRoutes() {
+  const { pathname } = useLocation()
   return (
     <>
       <ScrollManager />
-      <Routes>
-        <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
-        <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
-        <Route path="/candidates" element={<ProtectedRoute><CandidatesPage /></ProtectedRoute>} />
-        <Route path="/jobs" element={<ProtectedRoute><JobsPage /></ProtectedRoute>} />
-        <Route path="/appointments" element={<ProtectedRoute><AppointmentsPage /></ProtectedRoute>} />
-        <Route path="/tasks" element={<ProtectedRoute><TasksPage /></ProtectedRoute>} />
-        <Route path="/documents" element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
-        <Route path="/reports" element={<ProtectedRoute><ReportsPage /></ProtectedRoute>} />
-        <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
-        <Route path="/associates" element={<ProtectedRoute><AssociatesPage /></ProtectedRoute>} />
-        <Route path="/cv-builder" element={<ProtectedRoute><CVBuilderPage /></ProtectedRoute>} />
-        <Route path="/job-generator" element={<ProtectedRoute><JobGeneratorPage /></ProtectedRoute>} />
-        <Route path="/receptionist-view" element={<ProtectedRoute><ReceptionistViewPage /></ProtectedRoute>} />
-        <Route path="/whatsapp" element={<ProtectedRoute><WhatsAppPage /></ProtectedRoute>} />
-        <Route path="/recycle-bin" element={<ProtectedRoute><RecycleBinPage /></ProtectedRoute>} />
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
+      <ErrorBoundary resetKey={pathname}>
+        <Suspense fallback={<RouteSkeleton />}>
+          <Routes>
+            <Route path="/login" element={<PublicRoute><LoginPage /></PublicRoute>} />
+            {PROTECTED_ROUTES.map(([path, Page, page]) => (
+              <Route key={path} path={path} element={<ProtectedRoute page={page}><Page /></ProtectedRoute>} />
+            ))}
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </Suspense>
+      </ErrorBoundary>
     </>
   )
 }
@@ -82,8 +116,10 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-          <AppRoutes />
-          {isDemoMode && <DemoModeBanner />}
+          <NotificationsProvider>
+            <AppRoutes />
+            {isDemoMode && <DemoModeBanner />}
+          </NotificationsProvider>
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
