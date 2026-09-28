@@ -1,135 +1,139 @@
+// Phase 2 Dashboard 2.0: live KPIs straight from Supabase. Demo figures are
+// produced ONLY in dev demo mode (isDemoMode) and are flagged `demo: true` so
+// the UI labels them "Demo data" (CRM-9 policy).
 import { supabase, isSupabaseConfigured } from '../supabase/client'
-import { demoKPIs } from './demoData'
+import { PIPELINE_STAGES } from '../utils/stageTransitions'
+import { CANDIDATE_STAGES, TERMINAL_STAGES, normalizeStage } from '../utils/constants'
+import { EXPIRY_WARNING_DAYS, expiryStatus } from '../utils/documentChecklist'
+import { nairobiDate, addDaysYmd, nairobiMonthStartIso, nairobiMonthKey } from '../utils/dateUtils'
+import { getExpiringDocuments } from './documentService'
+import { demoCandidatesList, demoTasks } from './demoData'
 
-const CANDIDATE_STAGES = ['New', 'Interview', 'Offer', 'Completed', 'Rejected', 'Withdrawn']
+const PAGE = 1000
+const INTAKE_MONTHS = 6
 
-/**
- * Get candidates grouped by stage (funnel)
- */
-export async function getCandidatesByStage() {
-  if (!isSupabaseConfigured) return demoKPIs.byStage
-
-  try {
-    const { data, error } = await supabase
-      .from('candidates')
-      .select('id, stage', { count: 'exact' })
-      .order('stage')
-
+async function fetchAll(build) {
+  const rows = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build().range(from, from + PAGE - 1)
     if (error) throw error
-
-    const stages = CANDIDATE_STAGES.map((stage) => ({
-      stage,
-      count: (data || []).filter((c) => (c.stage || 'New') === stage).length,
-    }))
-
-    return stages
-  } catch (err) {
-    console.error('getCandidatesByStage error:', err)
-    return CANDIDATE_STAGES.map((stage) => ({ stage, count: 0 }))
+    rows.push(...(data || []))
+    if (!data || data.length < PAGE) return rows
   }
 }
 
-/**
- * Get placements count for the current month
- */
-export async function getMonthlyPlacements() {
-  if (!isSupabaseConfigured) return demoKPIs.monthlyPlacements
-
-  try {
-    const now = new Date()
-    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0)
-
-    const { data, error, count } = await supabase
-      .from('candidates')
-      .select('id', { count: 'exact' })
-      .eq('stage', 'Completed')
-      .gte('updated_at', monthStart.toISOString())
-      .lte('updated_at', monthEnd.toISOString())
-
-    if (error) throw error
-
-    return {
-      month: monthStart.toLocaleString('en-US', { month: 'long', year: 'numeric' }),
-      count: count || 0,
-    }
-  } catch (err) {
-    console.error('getMonthlyPlacements error:', err)
-    return { month: 'This Month', count: 0 }
-  }
+function monthLabel(key) {
+  const [y, m] = key.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, 15)).toLocaleString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' })
 }
 
-/**
- * Get documents expiring soon (good-conduct, medical, visas)
- * Warning at 90 days, critical at 30 days
- */
-export async function getExpiringDocuments(warnDays = 90) {
-  if (!isSupabaseConfigured) return demoKPIs.expiringDocuments
+/** Pure aggregation, shared by live and demo mode. */
+export function summarize({ candidates = [], tasks = [], documents = [], placedIds = [], now = new Date() }) {
+  const today = nairobiDate(now)
+  const monthStart = nairobiMonthStartIso(now)
 
-  try {
-    const now = new Date()
-    const warnDate = new Date(now.getTime() + warnDays * 24 * 60 * 60 * 1000)
-    const criticalDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
-
-    const docTypes = ['good-conduct', 'medical', 'visa']
-    const { data, error } = await supabase
-      .from('documents')
-      .select('id, candidate_id, doc_type, expiry_date, candidates(name)')
-      .in('doc_type', docTypes)
-      .not('expiry_date', 'is', null)
-      .lte('expiry_date', warnDate.toISOString().split('T')[0])
-      .gt('expiry_date', now.toISOString().split('T')[0])
-
-    if (error) throw error
-
-    const critical = (data || []).filter((d) => new Date(d.expiry_date) <= criticalDate).length
-    const warning = (data || []).length - critical
-
-    return { warning, critical, total: (data || []).length }
-  } catch (err) {
-    console.error('getExpiringDocuments error:', err)
-    return { warning: 0, critical: 0, total: 0 }
+  const stageCounts = new Map()
+  const countryCounts = new Map()
+  for (const c of candidates) {
+    const stage = normalizeStage(c.stage) || 'New'
+    stageCounts.set(stage, (stageCounts.get(stage) || 0) + 1)
+    const country = (c.country_applying_to || '').trim() || 'Unknown'
+    countryCounts.set(country, (countryCounts.get(country) || 0) + 1)
   }
-}
 
-/**
- * Get tasks due today
- */
-export async function getTasksDueToday() {
-  if (!isSupabaseConfigured) return demoKPIs.tasksDueToday
+  const byStage = CANDIDATE_STAGES.map((stage) => ({ stage, count: stageCounts.get(stage) || 0 }))
+  const funnel = PIPELINE_STAGES.map((stage) => ({ stage, count: stageCounts.get(stage) || 0 }))
+  const byCountry = [...countryCounts].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value)
 
-  try {
-    const today = new Date().toISOString().split('T')[0]
-    const { data, error, count } = await supabase
-      .from('tasks')
-      .select('id', { count: 'exact' })
-      .eq('due_date', today)
-      .neq('status', 'Completed')
-
-    if (error) throw error
-
-    return { date: today, count: count || 0 }
-  } catch (err) {
-    console.error('getTasksDueToday error:', err)
-    return { date: new Date().toISOString().split('T')[0], count: 0 }
+  const placed = new Set(placedIds)
+  for (const c of candidates) {
+    if (normalizeStage(c.stage) === 'Placed' && c.updated_at && c.updated_at >= monthStart) placed.add(c.id)
   }
-}
 
-/**
- * Get all KPIs (candidates by stage, placements, expiring docs, tasks due)
- */
-export async function getKPIs() {
-  const [byStage, placements, expiring, tasksDue] = await Promise.all([
-    getCandidatesByStage(),
-    getMonthlyPlacements(),
-    getExpiringDocuments(),
-    getTasksDueToday(),
-  ])
+  const expiringItems = documents
+    .map((d) => ({ ...d, ...expiryStatus(d.expiry_date, today) }))
+    .filter((d) => ['expired', 'critical', 'warning'].includes(d.status))
+    .sort((a, b) => String(a.expiry_date).localeCompare(String(b.expiry_date)))
+
+  const openTasks = tasks.filter((t) => t.status !== 'Completed' && t.due_date)
+  const dueToday = openTasks.filter((t) => String(t.due_date).slice(0, 10) === today)
+  const overdue = openTasks.filter((t) => String(t.due_date).slice(0, 10) < today)
+
+  const intakeKeys = Array.from({ length: INTAKE_MONTHS }, (_, i) => nairobiMonthKey(new Date(nairobiMonthStartIso(now, i - (INTAKE_MONTHS - 1)))))
+  const intakeCounts = new Map(intakeKeys.map((k) => [k, 0]))
+  for (const c of candidates) {
+    if (!c.created_at) continue
+    const key = nairobiMonthKey(new Date(c.created_at))
+    if (intakeCounts.has(key)) intakeCounts.set(key, intakeCounts.get(key) + 1)
+  }
+  const intake = intakeKeys.map((key) => ({ month: key, label: monthLabel(key), count: intakeCounts.get(key) }))
+
+  const active = candidates.filter((c) => !TERMINAL_STAGES.includes(normalizeStage(c.stage))).length
 
   return {
+    generatedAt: now.toISOString(),
+    today,
+    totals: { candidates: candidates.length, active },
     byStage,
-    placements,
-    expiring,
-    tasksDue,
+    funnel,
+    byCountry,
+    intake,
+    placementsThisMonth: {
+      count: placed.size,
+      month: new Date(monthStart).toLocaleString('en-US', { month: 'long', year: 'numeric', timeZone: 'Africa/Nairobi' }),
+    },
+    expiring: {
+      items: expiringItems,
+      expired: expiringItems.filter((d) => d.status === 'expired').length,
+      critical: expiringItems.filter((d) => d.status === 'critical').length,
+      warning: expiringItems.filter((d) => d.status === 'warning').length,
+    },
+    tasks: { dueToday, overdue },
   }
+}
+
+async function placementsFromLog(monthStartIso) {
+  try {
+    const { data, error } = await supabase
+      .from('activity_log')
+      .select('candidate_id')
+      .eq('action', 'stage_change')
+      .eq('changes->>to', 'Placed')
+      .gte('created_at', monthStartIso)
+      .limit(1000)
+    if (error) throw error
+    return (data || []).map((r) => r.candidate_id).filter(Boolean)
+  } catch {
+    return []
+  }
+}
+
+export async function getDashboardKPIs() {
+  if (!isSupabaseConfigured) {
+    return {
+      demo: true,
+      ...summarize({ candidates: demoCandidatesList, tasks: demoTasks, documents: [] }),
+    }
+  }
+
+  const now = new Date()
+  const today = nairobiDate(now)
+  const [candidates, tasks, documents, placedIds] = await Promise.all([
+    fetchAll(() => supabase
+      .from('candidates')
+      .select('id, stage, country_applying_to, created_at, updated_at')
+      .is('deleted_at', null)
+      .order('id')),
+    fetchAll(() => supabase
+      .from('tasks')
+      .select('id, title, due_date, status, priority')
+      .is('deleted_at', null)
+      .neq('status', 'Completed')
+      .lte('due_date', today)
+      .order('id')),
+    getExpiringDocuments(addDaysYmd(today, EXPIRY_WARNING_DAYS)),
+    placementsFromLog(nairobiMonthStartIso(now)),
+  ])
+
+  return { demo: false, ...summarize({ candidates, tasks, documents, placedIds, now }) }
 }

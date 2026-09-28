@@ -30,8 +30,9 @@ export const GROUP_LABELS = {
 // Every navigable destination in the app, with the extra words a user is
 // likely to type when they mean it ("trash" for Recycle Bin, "resume" for CVs).
 export const SEARCHABLE_PAGES = [
-  { title: 'Dashboard', to: '/dashboard', subtitle: 'Admin overview, task summary and quick actions', keywords: ['home', 'overview', 'summary', 'admin', 'main', 'quick actions', 'recent'] },
+  { title: 'Dashboard', to: '/dashboard', subtitle: 'Live KPIs, charts, task summary and quick actions', keywords: ['home', 'overview', 'summary', 'admin', 'main', 'quick actions', 'recent', 'kpi', 'charts'] },
   { title: 'Candidates', to: '/candidates', subtitle: 'Browse, add and manage all candidates', keywords: ['applicants', 'workers', 'people', 'profiles', 'staff', 'domestic worker'] },
+  { title: 'Pipeline', to: '/pipeline', subtitle: 'Drag-and-drop candidate board by stage', keywords: ['kanban', 'board', 'stages', 'funnel', 'drag', 'progress'] },
   { title: 'CV Builder', to: '/cv-builder', subtitle: 'Build and export candidate CVs from templates', keywords: ['cv', 'resume', 'curriculum vitae', 'builder', 'template', 'create cv'] },
   { title: 'Documents', to: '/documents', subtitle: 'CVs, medical reports, contracts, licenses and more', keywords: ['files', 'uploads', 'paperwork', 'attachments', 'folder'] },
   { title: 'Associates', to: '/associates', subtitle: 'Associate activity, candidates and tasks', keywords: ['partners', 'agents', 'agency', 'recruiters', 'team'] },
@@ -99,14 +100,7 @@ function searchPages(q) {
       recordScore([[page.subtitle, 1]], q),
     )
     if (score) {
-      results.push({
-        id: `page:${page.to}`,
-        type: 'page',
-        title: page.title,
-        subtitle: page.subtitle,
-        to: page.to,
-        score,
-      })
+      results.push({ id: `page:${page.to}`, type: 'page', title: page.title, subtitle: page.subtitle, to: page.to, score })
     }
   }
 
@@ -162,7 +156,8 @@ function mapCandidate(c, q) {
     title: c.name,
     subtitle: [role, where].filter(Boolean).join(' • ') || 'Candidate',
     meta: c.stage || c.status || '',
-    to: `/candidates?q=${encodeURIComponent(c.name || '')}`,
+    // Phase 2: straight to the candidate's profile.
+    to: `/candidates/${c.id}`,
     score,
   }
 }
@@ -213,7 +208,7 @@ function mapTask(t, q) {
     id: `task:${t.id}`,
     type: 'task',
     title: t.title,
-    subtitle: [t.assignee, t.category].filter(Boolean).join(' • ') || 'Task',
+    subtitle: [t.assignee, t.category, t.due_date && `Due ${t.due_date}`].filter(Boolean).join(' • ') || 'Task',
     meta: t.status || '',
     to: `/tasks?q=${encodeURIComponent(t.title || '')}`,
     score,
@@ -252,9 +247,11 @@ function mapAppointment(a, q) {
 
 function mapDocument(d, q, tab) {
   const name = d.file_name || d.name
+  const owner = d.candidates?.name
   const score = recordScore(
     [
       [name, 4],
+      [owner, 3],
       [d.document_type, 3],
       [d.description, 2],
       [d.uploadedBy, 1],
@@ -267,9 +264,10 @@ function mapDocument(d, q, tab) {
     id: `document:${d.id}`,
     type: 'document',
     title: name,
-    subtitle: [d.document_type, d.size].filter(Boolean).join(' • ') || 'Document',
+    subtitle: [d.document_type, owner || d.size, d.expiry_date && `Expires ${d.expiry_date}`].filter(Boolean).join(' • ') || 'Document',
     meta: d.uploadedAt || '',
-    to: `/documents?tab=${tab}&q=${encodeURIComponent(name || '')}`,
+    // Candidate documents open in that candidate's document center (signed URLs only).
+    to: d.candidate_id ? `/candidates/${d.candidate_id}?tab=documents` : `/documents?tab=${tab}&q=${encodeURIComponent(name || '')}`,
     score,
   }
 }
@@ -300,6 +298,7 @@ function mapCV(d, q) {
 function collect(list, mapper) {
   const out = []
   for (const row of list || []) {
+    if (row?.deleted_at) continue
     const item = mapper(row)
     if (item) out.push(item)
   }
@@ -309,8 +308,8 @@ function collect(list, mapper) {
 /** Demo mode (dev only, see CRM-9/10) — everything is already in memory. */
 function searchDemo(q) {
   return {
-    candidate: collect(demoCandidatesList.filter((c) => !c.deleted_at), (c) => mapCandidate(c, q)),
-    job: collect(demoJobs.filter((j) => !j.deleted_at), (j) => mapJob(j, q)),
+    candidate: collect(demoCandidatesList, (c) => mapCandidate(c, q)),
+    job: collect(demoJobs, (j) => mapJob(j, q)),
     task: collect(demoTasks, (t) => mapTask(t, q)),
     appointment: collect(demoAppointments, (a) => mapAppointment(a, q)),
     document: [
@@ -343,8 +342,9 @@ const EMPTY_ENTITIES = Object.freeze({ candidate: [], job: [], task: [], appoint
 /**
  * Supabase mode — one narrow query per table, all in parallel.
  * CRM-8: every filter goes through ilikeAny(), and only columns that exist in
- * supabase-schema.sql are referenced (unknown columns made PostgREST reject
- * the whole query, silently emptying results).
+ * the schema are referenced. Tables whose deleted_at column arrives with
+ * migration 004 are filtered client-side (collect() skips deleted rows) so
+ * search keeps working even before that migration is applied.
  */
 async function searchRemote(q) {
   if (!sanitizeSearch(q)) return EMPTY_ENTITIES
@@ -353,7 +353,7 @@ async function searchRemote(q) {
     remoteRows('jobs', ilikeAny(['title', 'company', 'city', 'country', 'description'], q)),
     remoteRows('tasks', ilikeAny(['title', 'description'], q), '*', false),
     remoteRows('appointments', ilikeAny(['title', 'type', 'notes'], q), '*, candidates(name, email, phone)', false),
-    remoteRows('documents', ilikeAny(['file_name', 'document_type'], q), '*', false),
+    remoteRows('documents', ilikeAny(['file_name', 'document_type'], q), '*, candidates(name)', false),
     remoteRows('cv_drafts', ilikeAny(['title', 'full_name'], q), 'id, title, full_name, template, updated_at', false),
   ])
 
