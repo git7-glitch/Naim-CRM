@@ -1,13 +1,13 @@
 import { supabase } from '../supabase/client'
+import { ilikeAny } from '../utils/sanitizeSearch'
 
 const TABLE = 'jobs'
 
 export async function getJobs({ search, status, country, page = 1, pageSize = 20 } = {}) {
   let query = supabase.from(TABLE).select('*', { count: 'exact' }).is('deleted_at', null)
 
-  if (search) {
-    query = query.or(`title.ilike.%${search}%,description.ilike.%${search}%`)
-  }
+  const searchFilter = ilikeAny(['title', 'description'], search)
+  if (searchFilter) query = query.or(searchFilter)
   if (status) query = query.eq('status', status)
   if (country) query = query.eq('country', country)
 

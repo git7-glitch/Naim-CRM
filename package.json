@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --experimental-vm-modules --test tests/*.test.mjs",
+    "test:mcp": "cd mcp-server && python -m unittest test_crm_helpers -v"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.109.0",

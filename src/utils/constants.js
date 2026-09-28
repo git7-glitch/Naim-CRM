@@ -1,3 +1,7 @@
+// CRM-6: the ONE canonical candidate stage vocabulary. The MCP server
+// (mcp-server/crm_helpers.py CANONICAL_STAGES) and the DB CHECK constraint
+// (supabase/migrations/002_candidate_stages.sql) must match this list exactly;
+// tests/stage-vocabulary.test.mjs enforces it.
 export const CANDIDATE_STAGES = [
   'New',
   'Source',
@@ -17,6 +21,31 @@ export const CANDIDATE_STAGES = [
   'Draft',
 ]
 
+// Stages where the pipeline has ended; auto-delete only sweeps these.
+export const TERMINAL_STAGES = ['Completed', 'Rejected', 'Withdrawn']
+
+// Spellings older builds wrote. Read-side only: normalizeStage() folds them
+// onto canonical stages so old drafts/records still display. Never write these.
+export const LEGACY_STAGE_MAP = Object.freeze({
+  Interviewing: 'Interview',
+  Hired: 'Placed',
+})
+
+export function isCanonicalStage(value) {
+  return CANDIDATE_STAGES.includes(value)
+}
+
+/** Fold any stored/imported stage spelling onto a canonical stage, or ''. */
+export function normalizeStage(value) {
+  const cleaned = typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : ''
+  if (!cleaned) return ''
+  const lower = cleaned.toLowerCase()
+  const canonical = CANDIDATE_STAGES.find((stage) => stage.toLowerCase() === lower)
+  if (canonical) return canonical
+  const legacy = Object.keys(LEGACY_STAGE_MAP).find((key) => key.toLowerCase() === lower)
+  return legacy ? LEGACY_STAGE_MAP[legacy] : ''
+}
+
 export const STAGE_COLORS = {
   New: 'bg-blue-100 text-blue-700',
   Source: 'bg-purple-100 text-purple-700',
@@ -34,6 +63,25 @@ export const STAGE_COLORS = {
   Withdrawn: 'bg-gray-100 text-gray-600',
   Pending: 'bg-amber-100 text-amber-700',
   Draft: 'bg-slate-100 text-slate-600',
+}
+
+export const STAGE_DOTS = {
+  New: 'bg-blue-500',
+  Source: 'bg-purple-500',
+  Screening: 'bg-yellow-400',
+  Interview: 'bg-indigo-500',
+  Assessment: 'bg-cyan-500',
+  Shortlist: 'bg-teal-500',
+  Offer: 'bg-purple-500',
+  'Contract Signing': 'bg-emerald-500',
+  'Visa Processing': 'bg-orange-500',
+  Onboarding: 'bg-lime-500',
+  Placed: 'bg-[#d7a42a]',
+  Completed: 'bg-[#8b6914]',
+  Rejected: 'bg-red-500',
+  Withdrawn: 'bg-gray-400',
+  Pending: 'bg-amber-500',
+  Draft: 'bg-slate-400',
 }
 
 export const JOB_STATUSES = ['Active', 'Draft', 'Closed']
@@ -101,6 +149,10 @@ export const RECRUITMENT_STAGES = [
   'Completed',
 ]
 
+// Hermes automation job contract (see docs/HERMES-INTEGRATION.md).
+export const AUTOMATION_JOB_TYPES = ['cv_build', 'lead_enrich', 'whatsapp_send', 'doc_ocr', 'followup_sweep']
+export const AUTOMATION_JOB_STATUSES = ['pending', 'claimed', 'done', 'failed']
+
 export const PAGE_ACCESS_OPTIONS = [
   'dashboard',
   'candidates',
@@ -115,4 +167,5 @@ export const PAGE_ACCESS_OPTIONS = [
   'job-generator',
   'receptionist-view',
   'recycle-bin',
+  'whatsapp',
 ]

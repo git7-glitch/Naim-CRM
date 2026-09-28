@@ -1,13 +1,14 @@
 import { supabase } from '../supabase/client'
+import { ilikeAny } from '../utils/sanitizeSearch'
+import { TERMINAL_STAGES } from '../utils/constants'
 
 const TABLE = 'candidates'
 
 export async function getCandidates({ search, stage, country, status, page = 1, pageSize = 20, sortBy = 'created_at', sortDir = 'desc' } = {}) {
   let query = supabase.from(TABLE).select('*', { count: 'exact' }).is('deleted_at', null)
 
-  if (search) {
-    query = query.or(`name.ilike.%${search}%,email.ilike.%${search}%,phone.ilike.%${search}%,passport_number.ilike.%${search}%`)
-  }
+  const searchFilter = ilikeAny(['name', 'email', 'phone', 'passport_number'], search)
+  if (searchFilter) query = query.or(searchFilter)
   if (stage) query = query.eq('stage', stage)
   if (country) query = query.eq('country_applying_to', country)
   if (status) query = query.eq('status', status)
@@ -81,11 +82,13 @@ export async function clearAllCandidates() {
   return data?.length || 0
 }
 
+// Auto-delete sweeps only candidates whose pipeline has ended
+// (canonical TERMINAL_STAGES: Completed, Rejected, Withdrawn).
 export async function autoDeleteCompletedCandidates(cutoff) {
   const { data, error } = await supabase
     .from(TABLE)
     .update({ deleted_at: new Date().toISOString() })
-    .in('stage', ['Hired', 'Rejected'])
+    .in('stage', TERMINAL_STAGES)
     .is('deleted_at', null)
     .lt('updated_at', cutoff)
     .select('id')

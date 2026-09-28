@@ -1,13 +1,13 @@
 import { supabase } from '../supabase/client'
+import { sanitizeSearch } from '../utils/sanitizeSearch'
 
 const TABLE = 'appointments'
 
 export async function getAppointments({ search, status, date, page = 1, pageSize = 20 } = {}) {
   let query = supabase.from(TABLE).select('*, candidates(name, email, phone)', { count: 'exact' })
 
-  if (search) {
-    query = query.ilike('title', `%${search}%`)
-  }
+  const term = sanitizeSearch(search)
+  if (term) query = query.ilike('title', `%${term}%`)
   if (status) query = query.eq('status', status)
   if (date) query = query.eq('date', date)
 
@@ -40,7 +40,8 @@ export async function deleteAppointment(id) {
 }
 
 export async function getUpcomingAppointments(limit = 10) {
-  const today = new Date().toISOString().split('T')[0]
+  // Today in Mombasa, not UTC — avoids dropping the morning's appointments.
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Africa/Nairobi' }).format(new Date())
   const { data, error } = await supabase.from(TABLE).select('*, candidates(name)').gte('date', today).order('date', { ascending: true }).limit(limit)
   if (error) throw error
   return data

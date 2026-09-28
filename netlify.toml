@@ -5,3 +5,27 @@
 [build.environment]
   NODE_VERSION = "20"
   NPM_FLAGS = "--prefer-offline=false"
+
+# CRM-5: SPA deep links (/candidates, /reports, ...) must serve index.html,
+# not a Netlify 404. Real files in dist/ still win because Netlify only
+# applies this rule when no static file matches.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Baseline hardening. Deliberately NOT set: Origin-Agent-Cluster (default
+# isolation must stay on for WebMCP) and Permissions-Policy (the WebMCP
+# `tools` feature keeps its default allowlist of 'self').
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Strict-Transport-Security = "max-age=31536000; includeSubDomains"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
