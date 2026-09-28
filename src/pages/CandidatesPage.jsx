@@ -22,6 +22,7 @@ import { syncStandardCandidateData, syncStandardDemoData } from '../services/can
 import { addLocalRecycleBinItems } from '../services/recycleBinService'
 import { demoCandidatesList } from '../services/demoData'
 import { exportToCSV, exportToExcel, exportToPDF } from '../utils/exportUtils'
+import { TERMINAL_STAGES } from '../utils/constants'
 import { useToast } from '../contexts/ToastContext'
 import {
   Users, Plus, Search, ChevronDown, ChevronUp, UserRound, FilePenLine,
@@ -36,7 +37,8 @@ const AUTO_DELETE_DURATIONS = [
   { value: '60', label: '60 days (2 months)' },
   { value: '90', label: '90 days (3 months)' },
 ]
-const COMPLETED_STAGES = new Set(['Hired', 'Rejected'])
+// CRM-6: canonical terminal stages (Completed, Rejected, Withdrawn).
+const COMPLETED_STAGES = new Set(TERMINAL_STAGES)
 const PAGE_SIZE = 10
 
 function getStoredAutoDeleteSettings() {
@@ -90,7 +92,7 @@ function BulkStageDropdown({ onChange }) {
         <div
           role="menu"
           aria-label="Bulk stage options"
-          className="absolute left-0 top-full z-30 mt-1 w-40 overflow-hidden border border-gray-100 bg-white py-0.5 shadow-[0_8px_18px_rgba(0,0,0,0.10)] animate-scale-in"
+          className="absolute left-0 top-full z-30 mt-1 max-h-72 w-44 overflow-y-auto border border-gray-100 bg-white py-0.5 shadow-[0_8px_18px_rgba(0,0,0,0.10)] animate-scale-in"
         >
           {CANDIDATE_STATUSES.map((status) => (
             <button
@@ -512,6 +514,7 @@ export default function CandidatesPage() {
               <input
                 id="candidates-search"
                 type="text"
+                aria-label="Search candidates"
                 value={search}
                 onChange={(e) => { setSearch(e.target.value); setPage(1) }}
                 placeholder="Search names, emails, countries, passports..."
@@ -520,6 +523,7 @@ export default function CandidatesPage() {
             </div>
             <div className="relative">
               <select
+                aria-label="Filter by stage"
                 value={stageFilter}
                 onChange={(e) => { setStageFilter(e.target.value); setPage(1) }}
                 className="h-9 appearance-none rounded-lg border-none bg-transparent pr-7 pl-2 text-[13px] font-medium text-text-primary outline-none cursor-pointer"
@@ -601,6 +605,7 @@ export default function CandidatesPage() {
                     <div className="flex items-center gap-2.5 p-3">
                       <input
                         type="checkbox"
+                        aria-label={`Select ${c.name}`}
                         checked={selectedIds.includes(c.id)}
                         onChange={() => toggleSelect(c.id)}
                         className="h-3.5 w-3.5 shrink-0 rounded border-gray-300 accent-primary"
@@ -631,12 +636,14 @@ export default function CandidatesPage() {
                         <button onClick={() => { setEditCandidate(c); setShowForm(true) }} title="Edit" aria-label={`Edit ${c.name}`} className="rounded-md p-1.5 text-blue-600 hover:bg-blue-50 transition-colors">
                           <FilePenLine className="h-4 w-4" />
                         </button>
-                        <button onClick={() => setDeleteTarget(c)} title="Delete" className="rounded-md p-1.5 text-red-500 hover:bg-red-50 transition-colors">
+                        <button onClick={() => setDeleteTarget(c)} title="Delete" aria-label={`Delete ${c.name}`} className="rounded-md p-1.5 text-red-500 hover:bg-red-50 transition-colors">
                           <Trash2 className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => setExpandedId(expanded ? null : c.id)}
                           title={expanded ? 'Collapse' : 'Expand'}
+                          aria-label={expanded ? `Collapse ${c.name}` : `Expand ${c.name}`}
+                          aria-expanded={expanded}
                           className="rounded-md p-1.5 text-gray-400 hover:bg-cream-warm hover:text-primary transition-colors"
                         >
                           {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -671,7 +678,7 @@ export default function CandidatesPage() {
                               </div>
                             </div>
                             <DetailField label="Departure" value={c.departure || 'Not set'} />
-                            <DetailField label="Added" value={c.added || 'Invalid Date'} />
+                            <DetailField label="Added" value={c.added || (c.created_at ? new Date(c.created_at).toLocaleDateString('en-KE', { timeZone: 'Africa/Nairobi' }) : 'Not set')} />
                             <div>
                               <p className="text-[13px] text-text-secondary">Notes:</p>
                               <p className="mt-1 text-[13px] font-medium uppercase leading-relaxed text-text-primary">
@@ -753,7 +760,7 @@ export default function CandidatesPage() {
             <div>
               <p className="text-[13px] font-semibold">Auto-Deletion Policy</p>
               <p className="mt-1 text-xs leading-4">
-                Completed candidates will be automatically deleted after the specified number of days. This helps maintain a clean database and removes old records.
+                Candidates in a finished stage (Completed, Rejected, Withdrawn) move to the Recycle Bin after the specified number of days without updates. Placed candidates are never swept.
               </p>
             </div>
           </div>
